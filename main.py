@@ -9,13 +9,9 @@ import ast
 import warnings
 warnings.filterwarnings('ignore')
 
-# Set style for better-looking plots
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 6)
 
-# ==============================
-# 1. DATA LOADING AND CLEANING
-# ==============================
 
 def load_and_clean_data(data_path="data/covid19_tweets.csv"):
     """
@@ -26,22 +22,18 @@ def load_and_clean_data(data_path="data/covid19_tweets.csv"):
     print("STEP 1: LOADING AND CLEANING DATA")
     print("=" * 60)
     
-    # Load data (SMALL DATA MODE: sample 5% for speed)
     df = pd.read_csv(data_path)
     df = df.sample(frac=0.05, random_state=42).reset_index(drop=True)
     print(f"✓ Dataset loaded successfully (sampled 5%)!")
     print(f"  Sampled shape: {df.shape}")
     print(f"  Columns: {list(df.columns)}")
     
-    # Select and clean essential columns
     essential_cols = ['user_name', 'text', 'hashtags', 'user_followers', 'is_retweet']
     available_cols = [col for col in essential_cols if col in df.columns]
     df = df[available_cols].copy()
     
-    # Remove rows with missing critical data
     df.dropna(subset=['user_name', 'text'], inplace=True)
     
-    # Clean follower counts (handle any non-numeric values)
     if 'user_followers' in df.columns:
         df['user_followers'] = pd.to_numeric(df['user_followers'], errors='coerce').fillna(0)
     
@@ -50,10 +42,6 @@ def load_and_clean_data(data_path="data/covid19_tweets.csv"):
     
     return df
 
-
-# ==============================
-# 2. MISINFORMATION DETECTION
-# ==============================
 
 def detect_misinformation(df):
     """
@@ -64,7 +52,6 @@ def detect_misinformation(df):
     print("STEP 2: DETECTING MISINFORMATION")
     print("=" * 60)
     
-    # Expanded list of misinformation keywords
     misinfo_keywords = [
         'hoax', 'fake', 'plandemic', 'conspiracy', 'lie', 'scam', 
         'bioweapon', 'fake news', 'cover-up', 'not real', 'doesn\'t exist',
@@ -76,7 +63,6 @@ def detect_misinformation(df):
         text = str(text).lower()
         return any(word in text for word in misinfo_keywords)
     
-    # Apply detection
     df['misinfo'] = df['text'].apply(is_misinfo)
     
     misinfo_count = df['misinfo'].sum()
@@ -89,10 +75,6 @@ def detect_misinformation(df):
     return df
 
 
-# ==============================
-# 3. EXPLORATORY DATA ANALYSIS
-# ==============================
-
 def exploratory_analysis(df):
     """
     Perform comprehensive exploratory data analysis with visualizations.
@@ -102,17 +84,14 @@ def exploratory_analysis(df):
     print("STEP 3: EXPLORATORY DATA ANALYSIS")
     print("=" * 60)
     
-    # Create figure with subplots
     fig = plt.figure(figsize=(16, 12))
     
-    # 3.1 Tweet Statistics Summary
     print("3.1 Tweet Statistics:")
     print(f"  Total tweets: {len(df):,}")
     print(f"  Unique users: {df['user_name'].nunique():,}")
     print(f"  Average tweets per user: {len(df) / df['user_name'].nunique():.2f}")
     print(f"  Retweets: {df['is_retweet'].sum() if 'is_retweet' in df.columns else 'N/A'}")
     
-    # 3.2 Misinformation Distribution (Pie Chart)
     ax1 = plt.subplot(2, 3, 1)
     misinfo_counts = df['misinfo'].value_counts()
     colors = ['#ff9999', '#66b3ff']
@@ -121,18 +100,15 @@ def exploratory_analysis(df):
             colors=colors, startangle=90)
     plt.title('Distribution of Misinformation vs Regular Tweets', fontsize=12, fontweight='bold')
     
-    # 3.3 User Follower Distribution (Histogram)
     ax2 = plt.subplot(2, 3, 2)
     if 'user_followers' in df.columns:
-        # Log scale for better visualization
-        followers = df['user_followers'].replace(0, 1)  # Replace 0 with 1 for log
+        followers = df['user_followers'].replace(0, 1)
         plt.hist(np.log10(followers), bins=50, color='skyblue', edgecolor='black', alpha=0.7)
         plt.xlabel('Log10(User Followers)')
         plt.ylabel('Frequency')
         plt.title('Distribution of User Followers (Log Scale)', fontsize=12, fontweight='bold')
         plt.grid(True, alpha=0.3)
     
-    # 3.4 Top Users by Tweet Count (Bar Chart)
     ax3 = plt.subplot(2, 3, 3)
     top_users = df['user_name'].value_counts().head(10)
     plt.barh(range(len(top_users)), top_users.values, color='coral')
@@ -141,7 +117,6 @@ def exploratory_analysis(df):
     plt.title('Top 10 Users by Tweet Count', fontsize=12, fontweight='bold')
     plt.gca().invert_yaxis()
     
-    # 3.5 Top Misinformation Spreaders (Bar Chart)
     ax4 = plt.subplot(2, 3, 4)
     misinfo_users = df[df['misinfo']]['user_name'].value_counts().head(10)
     if len(misinfo_users) > 0:
@@ -155,7 +130,6 @@ def exploratory_analysis(df):
                 ha='center', va='center', transform=ax4.transAxes)
         plt.title('Top 10 Misinformation Spreaders', fontsize=12, fontweight='bold')
     
-    # 3.6 Tweet Length Distribution (Histogram)
     ax5 = plt.subplot(2, 3, 5)
     tweet_lengths = df['text'].str.len()
     plt.hist(tweet_lengths, bins=50, color='lightgreen', edgecolor='black', alpha=0.7)
@@ -164,7 +138,6 @@ def exploratory_analysis(df):
     plt.title('Distribution of Tweet Lengths', fontsize=12, fontweight='bold')
     plt.grid(True, alpha=0.3)
     
-    # 3.7 Follower Count vs Misinformation (Box Plot)
     ax6 = plt.subplot(2, 3, 6)
     if 'user_followers' in df.columns:
         misinfo_followers = df[df['misinfo']]['user_followers'].replace(0, 1)
@@ -189,42 +162,30 @@ def exploratory_analysis(df):
     plt.show()
 
 
-# ==============================
-# 4. BUILD USER-ONLY NETWORK
-# ==============================
-
 def build_user_network(df):
     """
     Build a user-to-user network based on shared hashtags.
     Two users are connected if they use at least one common hashtag.
     Returns NetworkX graph with only user nodes.
-    
-    Optimized version: Uses hashtag-to-users mapping for O(n*m) complexity
-    instead of O(n²), where n=users and m=hashtags.
     """
     print("=" * 60)
     print("STEP 4: BUILDING USER-ONLY NETWORK")
     print("=" * 60)
     
-    # PERFORMANCE OPTIMIZATION: limit network size to top users
     MAX_USERS = 500
     top_users = df['user_name'].value_counts().head(MAX_USERS).index
     df = df[df['user_name'].isin(top_users)].copy()
 
     G = nx.Graph()
     
-    # Dictionary to store hashtags per user
     user_hashtags = {}
-    # Dictionary to store users per hashtag (for optimization)
     hashtag_users = {}
     
-    # Parse hashtags and build bidirectional mapping
     print("  Parsing hashtags...")
     for _, row in df.iterrows():
         user = row['user_name']
         hashtags_str = str(row['hashtags'])
         
-        # Try to parse as list if it's in string format
         try:
             if hashtags_str.startswith('['):
                 hashtags = ast.literal_eval(hashtags_str)
@@ -233,7 +194,6 @@ def build_user_network(df):
         except:
             hashtags = [tag.strip() for tag in hashtags_str.split(',') if tag.strip()]
         
-        # Clean and normalize hashtags
         hashtags = [tag.strip().lower().replace('#', '') 
                    for tag in hashtags if tag and tag.strip() and tag != 'nan']
         
@@ -241,18 +201,15 @@ def build_user_network(df):
             user_hashtags[user] = set()
         user_hashtags[user].update(hashtags)
         
-        # Build reverse mapping: hashtag -> users
         for tag in hashtags:
             if tag not in hashtag_users:
                 hashtag_users[tag] = set()
             hashtag_users[tag].add(user)
     
-    # Add all users as nodes
     print("  Adding nodes...")
     for user in user_hashtags.keys():
         G.add_node(user, type='user')
     
-    # Build edges more efficiently: for each hashtag, connect all users who used it
     print("  Building edges (this may take a moment for large datasets)...")
     edges_added = 0
     processed_pairs = set()  # Track edges to avoid duplicates
@@ -279,25 +236,18 @@ def build_user_network(df):
     return G, user_hashtags
 
 
-# ==============================
-# 5. SUPER-SPREADER ANALYSIS
-# ==============================
-
 def analyze_super_spreaders(G, df):
     """
     Identify and visualize top super-spreaders in the user network.
-    Uses multiple centrality measures to find influential users.
     """
     print("=" * 60)
     print("STEP 5: SUPER-SPREADER ANALYSIS")
     print("=" * 60)
     
-    # Calculate multiple centrality measures
     degree_centrality = nx.degree_centrality(G)
     betweenness_centrality = nx.betweenness_centrality(G)
     closeness_centrality = nx.closeness_centrality(G)
     
-    # Get top 10 by degree centrality
     top_spreaders = sorted(degree_centrality.items(), key=lambda x: x[1], reverse=True)[:10]
     
     print("Top 10 Super-Spreaders (by Degree Centrality):")
@@ -308,17 +258,13 @@ def analyze_super_spreaders(G, df):
         print(f"{i:2d}. {user[:40]:40s} | Centrality: {score:.4f} | "
               f"Misinfo: {misinfo_count}/{total_tweets}")
     
-    # Visualize super-spreader network
     top_users = [u for u, _ in top_spreaders]
     subG = G.subgraph(top_users)
     
-    # Create a more informative visualization
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
     
-    # Left plot: Network visualization
     pos = nx.spring_layout(subG, seed=42, k=1, iterations=50)
     
-    # Color nodes by misinformation spreading
     node_colors = []
     for user in top_users:
         misinfo_count = len(df[(df['user_name'] == user) & (df['misinfo'])])
@@ -360,23 +306,17 @@ def analyze_super_spreaders(G, df):
     return top_spreaders
 
 
-# ==============================
-# 6. SIR SIMULATION
-# ==============================
-
 def run_sir_simulation(df, G, steps=20, beta=0.05, gamma=0.2):
     """
     Run SIR (Susceptible-Infected-Recovered) model simulation.
-    Enhanced with network-based infection and better visualization.
     """
     print("=" * 60)
     print("STEP 6: SIR SIMULATION")
     print("=" * 60)
     
     users = list(G.nodes())
-    status = {u: 'S' for u in users}  # All start as Susceptible
+    status = {u: 'S' for u in users}
     
-    # Infect initial users (those who spread misinformation)
     initial_infected = df[df['misinfo']]['user_name'].unique()
     initial_infected = [u for u in initial_infected if u in users][:min(10, len(initial_infected))]
     
@@ -390,32 +330,25 @@ def run_sir_simulation(df, G, steps=20, beta=0.05, gamma=0.2):
     print(f"  Recovery rate (γ): {gamma}")
     print(f"  Simulation steps: {steps}\n")
     
-    # Track history
     S_history = [list(status.values()).count('S')]
     I_history = [list(status.values()).count('I')]
     R_history = [list(status.values()).count('R')]
     
-    # Run simulation
     for step in range(steps):
         new_status = status.copy()
         
         for u in users:
             if status[u] == 'I':
-                # Recovery: infected users can recover
                 if random.random() < gamma:
                     new_status[u] = 'R'
             elif status[u] == 'S':
-                # Infection: susceptible users can get infected
-                # Check neighbors in network
                 neighbors = list(G.neighbors(u))
                 if neighbors:
-                    # Higher infection probability if neighbors are infected
                     infected_neighbors = sum(1 for n in neighbors if status[n] == 'I')
                     infection_prob = beta * (1 + 0.5 * infected_neighbors)
                     if random.random() < min(infection_prob, 1.0):
                         new_status[u] = 'I'
                 else:
-                    # No neighbors: base infection rate
                     if random.random() < beta:
                         new_status[u] = 'I'
         
@@ -431,10 +364,8 @@ def run_sir_simulation(df, G, steps=20, beta=0.05, gamma=0.2):
         if step % 5 == 0 or step == steps - 1:
             print(f"Step {step:2d}: S={S:6d}, I={I:6d}, R={R:6d}")
     
-    # Enhanced visualization
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
     
-    # Left plot: SIR curves
     time_steps = range(len(S_history))
     ax1.plot(time_steps, S_history, label='Susceptible', marker='o', linewidth=2, markersize=6, color='blue')
     ax1.plot(time_steps, I_history, label='Infected', marker='s', linewidth=2, markersize=6, color='red')
@@ -445,7 +376,6 @@ def run_sir_simulation(df, G, steps=20, beta=0.05, gamma=0.2):
     ax1.legend(fontsize=10)
     ax1.grid(True, alpha=0.3)
     
-    # Right plot: Percentage view
     total = len(users)
     S_pct = [s/total*100 for s in S_history]
     I_pct = [i/total*100 for i in I_history]
@@ -469,14 +399,9 @@ def run_sir_simulation(df, G, steps=20, beta=0.05, gamma=0.2):
     return S_history, I_history, R_history
 
 
-# ==============================
-# 7. MACHINE LEARNING MODEL
-# ==============================
-
 def train_misinformation_predictor(df):
     """
     Train a simple machine learning model to predict misinformation.
-    Uses text features and user characteristics.
     """
     print("=" * 60)
     print("STEP 7: MACHINE LEARNING MODEL")
@@ -493,23 +418,18 @@ def train_misinformation_predictor(df):
         print("  Install with: pip install scikit-learn\n")
         return None
     
-    # Prepare features
     print("Preparing features...")
     
-    # Text features
     texts = df['text'].fillna('').astype(str)
     
-    # User features
     user_features = pd.DataFrame()
     if 'user_followers' in df.columns:
         user_features['followers'] = df['user_followers'].fillna(0)
     else:
         user_features['followers'] = 0
     
-    # Tweet length
     user_features['tweet_length'] = texts.str.len()
     
-    # Hashtag count
     def count_hashtags(hashtags_str):
         try:
             if pd.isna(hashtags_str):
@@ -584,10 +504,6 @@ def train_misinformation_predictor(df):
     
     return model, vectorizer, accuracy
 
-
-# ==============================
-# MAIN EXECUTION
-# ==============================
 
 def main():
     """Main execution function that runs all analysis steps."""

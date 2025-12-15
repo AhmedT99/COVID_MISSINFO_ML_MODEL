@@ -1,8 +1,3 @@
-"""
-Interactive Streamlit Dashboard for COVID-19 Misinformation Analysis
-Optimized for large datasets with disk caching, sampling, and efficient network building.
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -20,22 +15,18 @@ from sklearn.metrics import confusion_matrix, classification_report
 import warnings
 warnings.filterwarnings('ignore')
 
-# Suppress matplotlib output in Streamlit
 import matplotlib
 matplotlib.use('Agg')
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Constants
 DATA_PATH = "data/covid19_tweets.csv"
 NETWORK_CACHE_PATH = "data/network_cache.pkl"
 USER_HASHTAGS_CACHE_PATH = "data/user_hashtags_cache.pkl"
 CACHE_DIR = Path("data")
 CACHE_DIR.mkdir(exist_ok=True)
 
-# Custom CSS for better styling
 st.markdown("""
     <style>
     .main-header {
@@ -54,10 +45,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ==============================
-# OPTIMIZED DATA LOADING
-# ==============================
-
 @st.cache_data
 def load_and_clean_data_optimized(data_path, sample_size=None, sample_ratio=0.05):
     """
@@ -66,21 +53,17 @@ def load_and_clean_data_optimized(data_path, sample_size=None, sample_ratio=0.05
     """
     logger.info(f"Loading data from {data_path}")
     
-    # Essential columns only
     essential_cols = ['user_name', 'text', 'hashtags', 'user_followers', 'is_retweet']
     
-    # Read only necessary columns
     try:
         df = pd.read_csv(data_path, usecols=essential_cols)
         logger.info(f"Loaded {len(df):,} rows with {len(df.columns)} columns")
     except ValueError:
-        # If columns don't exist, read all and select
         df = pd.read_csv(data_path)
         available_cols = [col for col in essential_cols if col in df.columns]
         df = df[available_cols].copy()
         logger.info(f"Loaded {len(df):,} rows, selected {len(available_cols)} columns")
     
-    # SMALL DATA MODE: sample immediately after load (default 5%)
     if sample_ratio is not None and 0 < sample_ratio < 1:
         original_size = len(df)
         df = df.sample(frac=sample_ratio, random_state=42).reset_index(drop=True)
@@ -91,14 +74,12 @@ def load_and_clean_data_optimized(data_path, sample_size=None, sample_ratio=0.05
         df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
         logger.info(f"Sampled {len(df):,} rows from {original_size:,}")
     
-    # Remove rows with missing critical data
     initial_len = len(df)
     df.dropna(subset=['user_name', 'text'], inplace=True)
     removed = initial_len - len(df)
     if removed > 0:
         logger.info(f"Removed {removed:,} rows with missing data")
     
-    # Clean follower counts
     if 'user_followers' in df.columns:
         df['user_followers'] = pd.to_numeric(df['user_followers'], errors='coerce').fillna(0)
     
@@ -120,7 +101,6 @@ def detect_misinformation_optimized(df):
         'made up', 'false', 'deception', 'fraud'
     ]
     
-    # Vectorized approach for better performance
     text_lower = df['text'].astype(str).str.lower()
     df['misinfo'] = text_lower.str.contains('|'.join(misinfo_keywords), case=False, na=False)
     
@@ -130,16 +110,11 @@ def detect_misinformation_optimized(df):
     return df
 
 
-# ==============================
-# OPTIMIZED NETWORK BUILDING
-# ==============================
-
 def build_user_network_optimized(df, use_cache=True, force_rebuild=False, max_users=500):
     """
     Build user-to-user network with disk caching.
     Uses add_edges_from for optimal performance.
     """
-    # Check if cached network exists
     if use_cache and not force_rebuild and os.path.exists(NETWORK_CACHE_PATH):
         try:
             logger.info(f"Loading network from cache: {NETWORK_CACHE_PATH}")
@@ -152,25 +127,19 @@ def build_user_network_optimized(df, use_cache=True, force_rebuild=False, max_us
         except Exception as e:
             logger.warning(f"Failed to load cache: {e}. Rebuilding network...")
     
-    # Build network from scratch
     logger.info("Building user network from data...")
-    # PERFORMANCE OPTIMIZATION: cap network to top users to keep graph small
     top_users = df['user_name'].value_counts().head(max_users).index
     df = df[df['user_name'].isin(top_users)].copy()
     G = nx.Graph()
     
-    # Dictionary to store hashtags per user
     user_hashtags = {}
-    # Dictionary to store users per hashtag (for optimization)
     hashtag_users = {}
     
-    # Parse hashtags and build bidirectional mapping
     logger.info("  Step 1/4: Parsing hashtags...")
     for _, row in df.iterrows():
         user = row['user_name']
         hashtags_str = str(row['hashtags'])
         
-        # Try to parse as list if it's in string format
         try:
             if hashtags_str.startswith('['):
                 hashtags = ast.literal_eval(hashtags_str)
@@ -179,7 +148,6 @@ def build_user_network_optimized(df, use_cache=True, force_rebuild=False, max_us
         except:
             hashtags = [tag.strip() for tag in hashtags_str.split(',') if tag.strip()]
         
-        # Clean and normalize hashtags
         hashtags = [tag.strip().lower().replace('#', '') 
                    for tag in hashtags if tag and tag.strip() and tag != 'nan']
         
@@ -187,17 +155,14 @@ def build_user_network_optimized(df, use_cache=True, force_rebuild=False, max_us
             user_hashtags[user] = set()
         user_hashtags[user].update(hashtags)
         
-        # Build reverse mapping: hashtag -> users
         for tag in hashtags:
             if tag not in hashtag_users:
                 hashtag_users[tag] = set()
             hashtag_users[tag].add(user)
     
-    # Add all users as nodes
     logger.info("  Step 2/4: Adding nodes...")
     G.add_nodes_from(user_hashtags.keys(), type='user')
     
-    # Build edges efficiently using add_edges_from
     logger.info("  Step 3/4: Building edges (this may take a moment for large datasets)...")
     all_edges = []
     processed_pairs = set()  # Track edges to avoid duplicates
@@ -235,10 +200,6 @@ def build_user_network_optimized(df, use_cache=True, force_rebuild=False, max_us
     
     return G, user_hashtags
 
-
-# ==============================
-# SIMULATION AND ML FUNCTIONS
-# ==============================
 
 def run_sir_simulation_dashboard(df, G, steps=20, beta=0.05, gamma=0.2):
     """Run SIR simulation for dashboard (returns data without plotting)."""
@@ -297,7 +258,6 @@ def train_ml_model_dashboard(df):
     
     logger.info("Training ML model...")
     
-    # Prepare features (only necessary columns)
     texts = df['text'].fillna('').astype(str)
     
     user_features = pd.DataFrame()
@@ -320,7 +280,6 @@ def train_ml_model_dashboard(df):
     
     user_features['hashtag_count'] = df['hashtags'].apply(count_hashtags)
     
-    # TF-IDF vectorization
     logger.info("  Vectorizing text...")
     vectorizer = TfidfVectorizer(max_features=100, stop_words='english', ngram_range=(1, 2))
     text_features = vectorizer.fit_transform(texts)
@@ -351,14 +310,9 @@ def train_ml_model_dashboard(df):
     return model, vectorizer, accuracy, y_test, y_pred
 
 
-# ==============================
-# VISUALIZATION FUNCTIONS
-# ==============================
-
 def create_data_summary_plots(df):
     """Create interactive plots for data summary tab."""
     
-    # 1. Misinformation Distribution Pie Chart
     misinfo_counts = df['misinfo'].value_counts()
     fig_pie = px.pie(
         values=misinfo_counts.values,
@@ -370,7 +324,6 @@ def create_data_summary_plots(df):
     fig_pie.update_traces(textposition='inside', textinfo='percent+label')
     fig_pie.update_layout(height=400, showlegend=True)
     
-    # 2. User Follower Distribution
     if 'user_followers' in df.columns:
         followers = df['user_followers'].replace(0, 1)
         fig_followers = px.histogram(
@@ -384,7 +337,6 @@ def create_data_summary_plots(df):
     else:
         fig_followers = None
     
-    # 3. Top Users by Tweet Count
     top_users = df['user_name'].value_counts().head(10)
     fig_top_users = px.bar(
         x=top_users.values,
@@ -397,7 +349,6 @@ def create_data_summary_plots(df):
     )
     fig_top_users.update_layout(height=400, showlegend=False, yaxis={'categoryorder': 'total ascending'})
     
-    # 4. Top Misinformation Spreaders
     misinfo_users = df[df['misinfo']]['user_name'].value_counts().head(10)
     if len(misinfo_users) > 0:
         fig_misinfo_users = px.bar(
@@ -413,7 +364,6 @@ def create_data_summary_plots(df):
     else:
         fig_misinfo_users = None
     
-    # 5. Tweet Length Distribution
     tweet_lengths = df['text'].str.len()
     fig_length = px.histogram(
         x=tweet_lengths,
@@ -424,7 +374,6 @@ def create_data_summary_plots(df):
     )
     fig_length.update_layout(height=400, showlegend=False)
     
-    # 6. Follower Count Comparison
     if 'user_followers' in df.columns:
         regular_followers = df[~df['misinfo']]['user_followers'].replace(0, 1)
         misinfo_followers = df[df['misinfo']]['user_followers'].replace(0, 1)
@@ -462,21 +411,16 @@ def create_data_summary_plots(df):
 def create_network_visualization(G, df, top_n=20):
     """Create interactive network visualization with hover information."""
     
-    # Calculate centrality measures
     degree_centrality = nx.degree_centrality(G)
     betweenness_centrality = nx.betweenness_centrality(G)
     
-    # Get top N users by degree centrality
     top_users = sorted(degree_centrality.items(), key=lambda x: x[1], reverse=True)[:top_n]
     top_user_names = [u for u, _ in top_users]
     
-    # Create subgraph
     subG = G.subgraph(top_user_names)
     
-    # Get positions using spring layout
     pos = nx.spring_layout(subG, seed=42, k=1, iterations=50)
     
-    # Prepare edge traces
     edge_x = []
     edge_y = []
     for edge in subG.edges():
@@ -492,7 +436,6 @@ def create_network_visualization(G, df, top_n=20):
         mode='lines'
     )
     
-    # Prepare node traces with hover information
     node_x = []
     node_y = []
     node_text = []
@@ -500,7 +443,6 @@ def create_network_visualization(G, df, top_n=20):
     node_sizes = []
     node_colors = []
     
-    # Pre-compute user stats for efficiency
     user_stats = {}
     for user in top_user_names:
         user_tweets = df[df['user_name'] == user]
@@ -599,14 +541,12 @@ def create_sir_visualization(S_history, I_history, R_history, steps):
     time_steps = list(range(len(S_history)))
     total = S_history[0] + I_history[0] + R_history[0]
     
-    # Create subplots
     fig = make_subplots(
         rows=1, cols=2,
         subplot_titles=('SIR Model: Absolute Numbers', 'SIR Model: Percentage View'),
         specs=[[{"secondary_y": False}, {"secondary_y": False}]]
     )
     
-    # Left plot: Absolute numbers
     fig.add_trace(
         go.Scatter(x=time_steps, y=S_history, name='Susceptible',
                   line=dict(color='blue', width=3), mode='lines+markers', marker=dict(size=6)),
@@ -623,7 +563,6 @@ def create_sir_visualization(S_history, I_history, R_history, steps):
         row=1, col=1
     )
     
-    # Right plot: Percentages
     S_pct = [s/total*100 for s in S_history]
     I_pct = [i/total*100 for i in I_history]
     R_pct = [r/total*100 for r in R_history]
@@ -665,7 +604,6 @@ def create_sir_visualization(S_history, I_history, R_history, steps):
 def create_ml_metrics_visualization(y_test, y_pred, model, feature_names=None):
     """Create ML model metrics visualization."""
     
-    # Confusion Matrix
     cm = confusion_matrix(y_test, y_pred)
     
     fig_cm = px.imshow(
@@ -707,10 +645,6 @@ def create_ml_metrics_visualization(y_test, y_pred, model, feature_names=None):
     
     return fig_cm, fig_importance
 
-
-# ==============================
-# MAIN DASHBOARD
-# ==============================
 
 def main():
     """Main dashboard function."""
